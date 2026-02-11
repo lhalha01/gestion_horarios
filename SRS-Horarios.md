@@ -367,19 +367,262 @@ Período 5: 12:15 - 13:10
 
 **Desarrollo:**
 - IDE: Visual Studio 2022 o Visual Studio Code
-- Control de versiones: Git
+- Control de versiones: Git + GitHub
 - Base de datos local: SQL Server LocalDB o Docker con SQL Server
+- Gestión de ramas: GitFlow (main, develop, feature/*, hotfix/*)
 
 **Testing:**
 - Mock de base de datos con Entity Framework In-Memory
-- Suite de pruebas automatizadas
-- CI/CD con GitHub Actions o Azure DevOps
+- Suite de pruebas automatizadas (xUnit/NUnit + Moq)
+- Análisis de código estático (SonarQube/CodeQL)
+- Cobertura de código con reportes automatizados
+
+**Staging/Pre-Producción:**
+- Ambiente de pruebas en Azure App Service (slot de staging)
+- Base de datos Azure SQL (copia de producción con datos anonimizados)
+- Despliegue automático desde rama `develop`
+- Validación manual antes de promoción a producción
 
 **Producción:**
-- Hosting: Azure App Service
-- Base de datos: Azure SQL Database
-- CDN para recursos estáticos (opcional)
-- Application Insights para monitoreo
+- Hosting: Azure App Service (Plan Premium con escalado automático)
+- Base de datos: Azure SQL Database (nivel Business Critical)
+- Azure Blob Storage para archivos exportados
+- Azure Front Door como CDN y balanceador de carga
+- Application Insights para monitoreo, telemetría y alertas
+- Azure Key Vault para gestión de secretos y connection strings
+
+#### 2.7.6 Infraestructura como Código (IaC) y CI/CD
+
+##### 2.7.6.1 Terraform - Infrastructure as Code
+
+Toda la infraestructura de Azure se gestiona mediante **Terraform** para garantizar reproducibilidad, versionado y control de cambios:
+
+**Estructura de archivos Terraform:**
+```
+terraform/
+├── main.tf              # Configuración principal de recursos
+├── variables.tf         # Definición de variables (región, entorno, tamaños)
+├── outputs.tf           # Outputs (URLs, connection strings, IDs de recursos)
+├── backend.tf           # Configuración de estado remoto (Azure Storage Backend)
+├── terraform.tfvars     # Valores de variables por ambiente (gitignored)
+└── modules/
+    ├── app-service/     # Módulo para App Service Plan + Web App
+    ├── sql-database/    # Módulo para SQL Server + Database + Firewall Rules
+    ├── storage/         # Módulo para Storage Account + Containers
+    ├── key-vault/       # Módulo para Key Vault + Secrets
+    └── monitoring/      # Módulo para Application Insights + Dashboards
+```
+
+**Recursos gestionados por Terraform:**
+1. **Azure Resource Group**: Contenedor lógico para todos los recursos
+2. **Azure App Service Plan**: Plan de hosting con escalado automático
+3. **Azure App Service (Web App)**: Aplicación .NET 8 con slots (staging/production)
+4. **Azure SQL Server**: Servidor lógico con reglas de firewall y auditoría habilitada
+5. **Azure SQL Database**: Base de datos con backup geo-redundante y punto de restauración
+6. **Azure Storage Account**: Almacenamiento blob para archivos exportados (PDF, Excel, CSV)
+7. **Azure Key Vault**: Gestión centralizada de secretos, claves y certificados
+8. **Application Insights**: Telemetría, logs, métricas y alertas
+9. **Azure Front Door**: CDN global, balanceo de carga y protección WAF
+10. **Azure Monitor**: Dashboards personalizados y alertas de métricas
+
+**Características de la configuración:**
+- **Estado remoto**: Backend en Azure Storage Account con lock para prevenir cambios concurrentes
+- **Módulos reutilizables**: Abstracción de recursos complejos para reutilización en múltiples ambientes
+- **Variables por ambiente**: Configuraciones específicas para development, staging y production
+- **Outputs exportables**: Connection strings, URLs y IDs para uso en pipelines
+- **Tagging estándar**: Tags de ambiente, proyecto, propietario y centro de costos
+- **Seguridad**: Network Security Groups, Private Endpoints y reglas de firewall
+
+**Comandos Terraform en pipeline:**
+```bash
+# Inicialización con backend remoto
+terraform init -backend-config="resource_group_name=$BACKEND_RG"
+
+# Validación de sintaxis
+terraform validate
+
+# Formateo de código
+terraform fmt -check
+
+# Plan de cambios (preview)
+terraform plan -out=tfplan -var-file="environments/$ENVIRONMENT.tfvars"
+
+# Aplicación de infraestructura
+terraform apply tfplan
+
+# Destrucción (solo para ambientes temporales)
+terraform destroy -auto-approve
+```
+
+##### 2.7.6.2 GitHub Actions - CI/CD Pipelines
+
+**Pipeline de Integración Continua (.github/workflows/ci.yml):**
+
+```yaml
+name: CI - Build and Test
+
+on:
+  push:
+    branches: [develop, main]
+  pull_request:
+    branches: [develop, main]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      
+      - name: Restore dependencies
+        run: dotnet restore
+      
+      - name: Build solution
+        run: dotnet build --configuration Release --no-restore
+      
+      - name: Run unit tests
+        run: dotnet test --configuration Release --no-build --verbosity normal --collect:"XPlat Code Coverage"
+      
+      - name: Code coverage report
+        uses: codecov/codecov-action@v3
+      
+      - name: Static code analysis (SonarQube)
+        uses: sonarsource/sonarcloud-github-action@master
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      
+      - name: Publish artifacts
+        run: dotnet publish --configuration Release --output ./publish
+      
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dotnet-app
+          path: ./publish
+```
+
+**Pipeline de Despliegue Continuo (.github/workflows/cd.yml):**
+
+```yaml
+name: CD - Deploy to Azure
+
+on:
+  push:
+    branches:
+      - main      # Production deployment
+      - develop   # Staging deployment
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        type: choice
+        options:
+          - development
+          - staging
+          - production
+
+jobs:
+  terraform-plan:
+    runs-on: ubuntu-latest
+    environment: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.0
+      
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      
+      - name: Terraform Init
+        run: |
+          cd terraform
+          terraform init -backend-config="resource_group_name=${{ secrets.BACKEND_RG }}"
+      
+      - name: Terraform Plan
+        run: |
+          cd terraform
+          terraform plan -out=tfplan -var-file="environments/${{ env.ENVIRONMENT }}.tfvars"
+      
+      - name: Terraform Apply
+        if: github.event_name == 'push'
+        run: |
+          cd terraform
+          terraform apply -auto-approve tfplan
+  
+  deploy-application:
+    needs: terraform-plan
+    runs-on: ubuntu-latest
+    environment: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dotnet-app
+      
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      
+      - name: Deploy to Azure App Service
+        uses: azure/webapps-deploy@v2
+        with:
+          app-name: ${{ secrets.APP_SERVICE_NAME }}
+          slot-name: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
+          package: .
+      
+      - name: Run EF Core Migrations
+        run: |
+          az webapp config connection-string list --name ${{ secrets.APP_SERVICE_NAME }} --resource-group ${{ secrets.RESOURCE_GROUP }}
+          dotnet ef database update --project HorariosEscolares.Infrastructure --startup-project HorariosEscolares.API
+      
+      - name: Smoke Tests
+        run: |
+          curl -f https://${{ secrets.APP_SERVICE_NAME }}.azurewebsites.net/health || exit 1
+      
+      - name: Notify deployment
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+```
+
+**Ambientes y estrategia de despliegue:**
+
+| Ambiente | Rama | Trigger | Aprobación | Descripción |
+|----------|------|---------|------------|-------------|
+| **Development** | feature/* | Push manual | No requerida | Ambiente efímero para pruebas de desarrollador |
+| **Staging** | develop | Push automático | Aprobación de QA | Pre-producción con datos de prueba |
+| **Production** | main | Push automático | Aprobación de PO/Director | Producción con usuarios reales |
+
+**Secrets de GitHub requeridos:**
+- `AZURE_CREDENTIALS`: Service Principal JSON para autenticación en Azure
+- `AZURE_SUBSCRIPTION_ID`: ID de suscripción de Azure
+- `BACKEND_RG`: Resource Group del backend de Terraform
+- `APP_SERVICE_NAME`: Nombre del App Service
+- `RESOURCE_GROUP`: Resource Group principal
+- `SQL_CONNECTION_STRING`: Connection string de Azure SQL (generado por Terraform)
+- `SONAR_TOKEN`: Token para análisis de código con SonarCloud
+- `SLACK_WEBHOOK`: Webhook para notificaciones de Slack/Teams
+- `TERRAFORM_CLOUD_TOKEN`: Token para Terraform Cloud (opcional)
+
+**Estrategia de rollback:**
+- Slots de App Service permiten swap instantáneo a versión anterior
+- Terraform mantiene historial de estados para rollback de infraestructura
+- Migraciones EF Core con scripts de rollback automático
+- Backup automático de base de datos antes de cada despliegue
 
 ---
 
@@ -746,6 +989,23 @@ Período 5: 12:15 - 13:10
 - **RNF-07.1**: Arquitectura que permita escalado horizontal
 - **RNF-07.2**: Caché implementado para reducir carga en BD
 - **RNF-07.3**: Balance de carga para múltiples instancias
+
+### 4.8 Deployment y DevOps (RNF-08)
+- **RNF-08.1**: Infraestructura gestionada como código con Terraform para reproducibilidad y versionado
+- **RNF-08.2**: Pipelines CI/CD automatizados con GitHub Actions para build, test y deploy
+- **RNF-08.3**: Despliegue automatizado a Azure App Service con slots para staging y production
+- **RNF-08.4**: Migraciones de base de datos automatizadas con Entity Framework Core en pipeline
+- **RNF-08.5**: Tests automatizados (unitarios + integración) ejecutados en cada commit
+- **RNF-08.6**: Análisis de código estático (SonarQube/CodeQL) integrado en pipeline CI
+- **RNF-08.7**: Cobertura de código mínima del 80% validada automáticamente
+- **RNF-08.8**: Estado de Terraform almacenado remotamente en Azure Storage con lock
+- **RNF-08.9**: Secrets y connection strings gestionados en Azure Key Vault
+- **RNF-08.10**: Rollback automático mediante slots de App Service en caso de fallos
+- **RNF-08.11**: Múltiples ambientes (development, staging, production) con configuraciones independientes
+- **RNF-08.12**: Notificaciones automáticas de resultado de despliegues (Slack/Teams)
+- **RNF-08.13**: Smoke tests automatizados post-deploy para validar disponibilidad
+- **RNF-08.14**: Backup automático de base de datos antes de aplicar migraciones
+- **RNF-08.15**: Tagging consistente de recursos Azure para gestión de costos y auditoría
 
 ---
 
