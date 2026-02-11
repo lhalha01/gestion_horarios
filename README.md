@@ -72,6 +72,8 @@ Aplicación web desarrollada en **.NET 8** que permite la **confección automát
 - **Visualización**: Tablas Bootstrap con colores y estilos personalizados
 
 ### Despliegue (Cloud)
+- **Infraestructura como Código (IaC)**: Terraform
+- **CI/CD**: GitHub Actions (pipelines automatizados)
 - **Hosting**: Azure App Service
 - **Base de datos**: Azure SQL Database
 - **Almacenamiento**: Azure Blob Storage (archivos exportados)
@@ -86,6 +88,26 @@ Aplicación web desarrollada en **.NET 8** que permite la **confección automát
 
 ```
 gestion_horarios/
+├── .github/
+│   └── workflows/
+│       ├── ci.yml                    # Pipeline de Integración Continua
+│       └── cd.yml                    # Pipeline de Despliegue Continuo
+├── terraform/                        # Infraestructura como Código
+│   ├── main.tf                       # Recursos principales de Azure
+│   ├── variables.tf                  # Variables de configuración
+│   ├── outputs.tf                    # Outputs de infraestructura
+│   ├── backend.tf                    # Configuración de estado remoto
+│   └── modules/                      # Módulos reutilizables
+│       ├── app-service/
+│       ├── sql-database/
+│       └── storage/
+├── src/                              # Código fuente (próximamente)
+│   ├── HorariosEscolares.Domain/     # Entidades y lógica de negocio
+│   ├── HorariosEscolares.Application/# Servicios y casos de uso
+│   ├── HorariosEscolares.Infrastructure/ # Repositorios y DbContext
+│   ├── HorariosEscolares.API/        # Controllers y API REST
+│   ├── HorariosEscolares.Web/        # Frontend HTML/Bootstrap
+│   └── HorariosEscolares.Tests/      # Tests unitarios e integración
 ├── README.md                         # Este archivo
 ├── SRS-Horarios.md                   # Especificación de Requisitos (IEEE 830-1998)
 │   ├── 34 Requisitos Funcionales
@@ -112,6 +134,8 @@ gestion_horarios/
 | **Frontend** | HTML5, CSS3, Bootstrap 5.3, JavaScript ES6+ |
 | **Testing** | xUnit, NUnit, Moq |
 | **Cloud** | Microsoft Azure (App Service, SQL DB, Blob Storage) |
+| **IaC** | Terraform (Azure Provider) |
+| **CI/CD** | GitHub Actions (workflows automatizados) |
 | **Versionado** | Git + GitHub |
 | **IDE Recomendado** | Visual Studio 2022 / VS Code |
 
@@ -158,7 +182,72 @@ cd gestion_horarios
 # dotnet run --project HorariosEscolares.API
 ```
 
-## 📚 Documentación Disponible
+## � CI/CD y Despliegue Automatizado
+
+### Infrastructure as Code (IaC) con Terraform
+
+El proyecto utiliza **Terraform** para gestionar toda la infraestructura de Azure de manera declarativa:
+
+```hcl
+# Estructura esperada de archivos Terraform
+terraform/
+├── main.tf                  # Configuración principal de recursos Azure
+├── variables.tf             # Variables de entrada (región, tamaño, etc.)
+├── outputs.tf               # Outputs (URLs, connection strings)
+├── backend.tf               # Estado remoto en Azure Storage
+└── modules/
+    ├── app-service/         # Módulo para App Service
+    ├── sql-database/        # Módulo para Azure SQL
+    └── storage/             # Módulo para Blob Storage
+```
+
+**Recursos gestionados por Terraform:**
+- ☁️ Azure Resource Group
+- 🌐 Azure App Service (Plan + Web App)
+- 🗄️ Azure SQL Server + Database
+- 📦 Azure Blob Storage Account
+- 📊 Application Insights
+- 🔐 Key Vault (secretos y connection strings)
+- 🌍 Azure Front Door (CDN y balanceo)
+
+### Pipelines CI/CD con GitHub Actions
+
+**Workflow de Integración Continua (.github/workflows/ci.yml):**
+```yaml
+# Trigger: Push a ramas develop/main, Pull Requests
+- Build de solución .NET 8
+- Ejecución de tests unitarios (xUnit/NUnit)
+- Ejecución de tests de integración
+- Análisis de código estático (SonarQube/CodeQL)
+- Generación de reportes de cobertura
+- Build de artefactos (publish)
+```
+
+**Workflow de Despliegue Continuo (.github/workflows/cd.yml):**
+```yaml
+# Trigger: Push a main (producción) / develop (staging)
+- Validación de Terraform (terraform plan)
+- Aplicación de infraestructura (terraform apply)
+- Despliegue de aplicación a Azure App Service
+- Ejecución de migraciones de EF Core
+- Tests de smoke en ambiente desplegado
+- Notificación de resultado (Slack/Teams)
+```
+
+**Ambientes:**
+- 🧪 **Development**: Despliegue automático desde rama `develop`
+- 🎯 **Staging**: Despliegue automático con aprobación manual
+- 🚀 **Production**: Despliegue desde `main` con aprobación requerida
+
+### Secrets y Variables de Entorno
+
+GitHub Secrets requeridos:
+- `AZURE_CREDENTIALS`: Service Principal para autenticación
+- `AZURE_SUBSCRIPTION_ID`: ID de suscripción de Azure
+- `SQL_CONNECTION_STRING`: Connection string de base de datos
+- `TERRAFORM_TOKEN`: Token para backend remoto de Terraform
+
+## �📚 Documentación Disponible
 
 ### 📖 [SRS-Horarios.md](SRS-Horarios.md) - Especificación Completa (~2,500 líneas)
 Documento maestro siguiendo el estándar **IEEE 830-1998** que incluye:
@@ -192,7 +281,8 @@ Este proyecto está en fase inicial de desarrollo. Las contribuciones serán bie
 - [ ] **Fase 4**: Creación de API REST Controllers y Services
 - [ ] **Fase 5**: Desarrollo de frontend con Bootstrap
 - [ ] **Fase 6**: Testing y validación (unit + integration tests)
-- [ ] **Fase 7**: Despliegue en Azure Cloud
+- [ ] **Fase 7**: Infraestructura IaC con Terraform y pipelines CI/CD con GitHub Actions
+- [ ] **Fase 8**: Despliegue en Azure Cloud
 
 ## 📄 Licencia
 
