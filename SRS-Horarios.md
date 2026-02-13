@@ -83,7 +83,7 @@ Las principales funciones incluyen:
 - Cumplir con normativas de protección de datos (GDPR, LOPD)
 - Disponibilidad del 99.5% mensual
 - Backend desarrollado en .NET 8
-- Base de datos: Azure SQL Server
+- Base de datos: MSSQL Server en Docker
 - Frontend: HTML, CSS y Bootstrap
 - Visualización de horarios mediante tablas HTML/Bootstrap
 
@@ -188,10 +188,14 @@ Período 5: 12:15 - 13:10
 - **Autenticación**: ASP.NET Core Identity con JWT
 
 **Base de Datos:**
-- **Producción**: Azure SQL Server
-- **Desarrollo/Testing**: SQL Server LocalDB o Mock con In-Memory Database
+- **Motor**: MSSQL Server 2022 en contenedor Docker
+- **Desarrollo**: Instancia Docker local (puerto 1433)
+- **Testing**: SQL Server en Docker o In-Memory Database para pruebas unitarias
+- **Producción**: Contenedor Docker SQL Server con volúmenes persistentes
 - **Migraciones**: Entity Framework Core Migrations
 - **Versionado**: Control de versiones de esquema con Code-First
+- **Configuración Docker**: docker-compose.yml para orquestación
+- **Persistencia**: Volúmenes Docker para datos y logs
 
 **Frontend:**
 - **Marcado**: HTML5
@@ -237,8 +241,8 @@ Período 5: 12:15 - 13:10
          ┌────────┴────────┐
          ▼                 ▼
     ┌─────────┐      ┌──────────┐
-    │ Azure   │      │   Mock   │
-    │SQL Server│     │ In-Memory│
+    │ MSSQL   │      │   Mock   │
+    │ Docker  │      │ In-Memory│
     └─────────┘      └──────────┘
 ```
 
@@ -368,7 +372,8 @@ Período 5: 12:15 - 13:10
 **Desarrollo:**
 - IDE: Visual Studio 2022 o Visual Studio Code
 - Control de versiones: Git + GitHub
-- Base de datos local: SQL Server LocalDB o Docker con SQL Server
+- Base de datos local: MSSQL Server en Docker (imagen mcr.microsoft.com/mssql/server:2022-latest)
+- Docker Compose para levantar base de datos con configuración predefinida
 - Gestión de ramas: GitFlow (main, develop, feature/*, hotfix/*)
 
 **Testing:**
@@ -378,80 +383,143 @@ Período 5: 12:15 - 13:10
 - Cobertura de código con reportes automatizados
 
 **Staging/Pre-Producción:**
-- Ambiente de pruebas en Azure App Service (slot de staging)
-- Base de datos Azure SQL (copia de producción con datos anonimizados)
+- Ambiente de pruebas con contenedores Docker
+- Base de datos MSSQL Server en Docker (copia de producción con datos anonimizados)
 - Despliegue automático desde rama `develop`
 - Validación manual antes de promoción a producción
 
 **Producción:**
-- Hosting: Azure App Service (Plan Premium con escalado automático)
-- Base de datos: Azure SQL Database (nivel Business Critical)
-- Azure Blob Storage para archivos exportados
-- Azure Front Door como CDN y balanceador de carga
-- Application Insights para monitoreo, telemetría y alertas
-- Azure Key Vault para gestión de secretos y connection strings
+- Hosting: Contenedores Docker con orquestación (Docker Compose o Kubernetes)
+- Base de datos: MSSQL Server 2022 en contenedor Docker con volúmenes persistentes
+- Almacenamiento de archivos exportados en volúmenes Docker
+- Reverse proxy (Nginx/Traefik) para balanceo de carga
+- Logging centralizado con herramientas como Seq o ELK Stack
+- Secrets management mediante variables de entorno o Docker Secrets
 
 #### 2.7.6 Infraestructura como Código (IaC) y CI/CD
 
-##### 2.7.6.1 Terraform - Infrastructure as Code
+##### 2.7.6.1 Docker Compose - Infrastructure as Code
 
-Toda la infraestructura de Azure se gestiona mediante **Terraform** para garantizar reproducibilidad, versionado y control de cambios:
+Toda la infraestructura se gestiona mediante **Docker y Docker Compose** para garantizar reproducibilidad, portabilidad y control de cambios:
 
-**Estructura de archivos Terraform:**
+**Estructura de archivos Docker:**
 ```
-terraform/
-├── main.tf              # Configuración principal de recursos
-├── variables.tf         # Definición de variables (región, entorno, tamaños)
-├── outputs.tf           # Outputs (URLs, connection strings, IDs de recursos)
-├── backend.tf           # Configuración de estado remoto (Azure Storage Backend)
-├── terraform.tfvars     # Valores de variables por ambiente (gitignored)
-└── modules/
-    ├── app-service/     # Módulo para App Service Plan + Web App
-    ├── sql-database/    # Módulo para SQL Server + Database + Firewall Rules
-    ├── storage/         # Módulo para Storage Account + Containers
-    ├── key-vault/       # Módulo para Key Vault + Secrets
-    └── monitoring/      # Módulo para Application Insights + Dashboards
+docker/
+├── docker-compose.yml           # Configuración principal de servicios
+├── docker-compose.dev.yml       # Override para desarrollo
+├── docker-compose.staging.yml   # Override para staging
+├── docker-compose.prod.yml      # Override para producción
+├── .env.example                 # Plantilla de variables de entorno
+├── .env                         # Variables de entorno (gitignored)
+└── sql-server/
+    ├── Dockerfile               # Imagen personalizada de SQL Server (opcional)
+    ├── init.sql                 # Scripts de inicialización de BD
+    └── healthcheck.sh           # Script de verificación de salud
 ```
 
-**Recursos gestionados por Terraform:**
-1. **Azure Resource Group**: Contenedor lógico para todos los recursos
-2. **Azure App Service Plan**: Plan de hosting con escalado automático
-3. **Azure App Service (Web App)**: Aplicación .NET 8 con slots (staging/production)
-4. **Azure SQL Server**: Servidor lógico con reglas de firewall y auditoría habilitada
-5. **Azure SQL Database**: Base de datos con backup geo-redundante y punto de restauración
-6. **Azure Storage Account**: Almacenamiento blob para archivos exportados (PDF, Excel, CSV)
-7. **Azure Key Vault**: Gestión centralizada de secretos, claves y certificados
-8. **Application Insights**: Telemetría, logs, métricas y alertas
-9. **Azure Front Door**: CDN global, balanceo de carga y protección WAF
-10. **Azure Monitor**: Dashboards personalizados y alertas de métricas
+**Servicios gestionados por Docker Compose:**
 
-**Características de la configuración:**
-- **Estado remoto**: Backend en Azure Storage Account con lock para prevenir cambios concurrentes
-- **Módulos reutilizables**: Abstracción de recursos complejos para reutilización en múltiples ambientes
-- **Variables por ambiente**: Configuraciones específicas para development, staging y production
-- **Outputs exportables**: Connection strings, URLs y IDs para uso en pipelines
-- **Tagging estándar**: Tags de ambiente, proyecto, propietario y centro de costos
-- **Seguridad**: Network Security Groups, Private Endpoints y reglas de firewall
+1. **mssql-server**: 
+   - Imagen: `mcr.microsoft.com/mssql/server:2022-latest`
+   - Puerto: 1433
+   - Volúmenes persistentes para datos y logs
+   - Variables: SA_PASSWORD, ACCEPT_EULA, MSSQL_PID
+   - Health check configurado
 
-**Comandos Terraform en pipeline:**
+2. **horarios-api**: 
+   - Aplicación .NET 8 Web API
+   - Construida desde Dockerfile multi-stage
+   - Dependencia en mssql-server
+   - Variables de entorno para ConnectionString
+
+3. **nginx** (Producción):
+   - Reverse proxy para la API
+   - Configuración SSL/TLS
+   - Balanceo de carga (si múltiples instancias)
+   - Servicio de archivos estáticos
+
+4. **seq** (Logging):
+   - Centralización de logs estructurados
+   - Puerto: 5341 (ingestion), 80 (UI)
+   - Volumen persistente para datos
+
+**Ejemplo docker-compose.yml:**
+```yaml
+version: '3.8'
+
+services:
+  mssql:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: horarios-mssql
+    environment:
+      - ACCEPT_EULA=Y
+      - SA_PASSWORD=${SA_PASSWORD}
+      - MSSQL_PID=Developer
+    ports:
+      - "1433:1433"
+    volumes:
+      - mssql-data:/var/opt/mssql/data
+      - mssql-log:/var/opt/mssql/log
+      - ./sql-server/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P ${SA_PASSWORD} -Q "SELECT 1"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ..
+      dockerfile: HorariosEscolares.API/Dockerfile
+    container_name: horarios-api
+    environment:
+      - ASPNETCORE_ENVIRONMENT=${ENVIRONMENT}
+      - ConnectionStrings__DefaultConnection=Server=mssql;Database=HorariosDB;User Id=sa;Password=${SA_PASSWORD};TrustServerCertificate=True
+    ports:
+      - "5000:8080"
+    depends_on:
+      mssql:
+        condition: service_healthy
+    restart: unless-stopped
+
+  seq:
+    image: datalust/seq:latest
+    container_name: horarios-seq
+    environment:
+      - ACCEPT_EULA=Y
+    ports:
+      - "5341:5341"
+      - "8081:80"
+    volumes:
+      - seq-data:/data
+    restart: unless-stopped
+
+volumes:
+  mssql-data:
+  mssql-log:
+  seq-data:
+```
+
+**Comandos Docker en pipeline:**
 ```bash
-# Inicialización con backend remoto
-terraform init -backend-config="resource_group_name=$BACKEND_RG"
+# Levantar servicios (desarrollo)
+docker-compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 
-# Validación de sintaxis
-terraform validate
+# Ver logs de servicios
+docker-compose logs -f api
 
-# Formateo de código
-terraform fmt -check
+# Aplicar migraciones EF Core
+docker-compose exec api dotnet ef database update
 
-# Plan de cambios (preview)
-terraform plan -out=tfplan -var-file="environments/$ENVIRONMENT.tfvars"
+# Detener servicios
+docker-compose down
 
-# Aplicación de infraestructura
-terraform apply tfplan
+# Reconstruir imágenes
+docker-compose build --no-cache
 
-# Destrucción (solo para ambientes temporales)
-terraform destroy -auto-approve
+# Producción con override
+docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 ```
 
 ##### 2.7.6.2 GitHub Actions - CI/CD Pipelines
@@ -470,6 +538,21 @@ on:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    
+    services:
+      mssql:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: Y
+          SA_PASSWORD: Test@1234
+        ports:
+          - 1433:1433
+        options: >-
+          --health-cmd "/opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P Test@1234 -Q 'SELECT 1'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -487,6 +570,8 @@ jobs:
       
       - name: Run unit tests
         run: dotnet test --configuration Release --no-build --verbosity normal --collect:"XPlat Code Coverage"
+        env:
+          ConnectionStrings__DefaultConnection: "Server=localhost;Database=HorariosTestDB;User Id=sa;Password=Test@1234;TrustServerCertificate=True"
       
       - name: Code coverage report
         uses: codecov/codecov-action@v3
@@ -496,20 +581,27 @@ jobs:
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       
-      - name: Publish artifacts
-        run: dotnet publish --configuration Release --output ./publish
+      - name: Build Docker image
+        run: docker build -t horarios-api:${{ github.sha }} -f HorariosEscolares.API/Dockerfile .
       
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+      - name: Login to Docker Hub
+        if: github.event_name == 'push'
+        uses: docker/login-action@v3
         with:
-          name: dotnet-app
-          path: ./publish
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      
+      - name: Push Docker image
+        if: github.event_name == 'push'
+        run: |
+          docker tag horarios-api:${{ github.sha }} ${{ secrets.DOCKER_USERNAME }}/horarios-api:${{ github.ref_name }}
+          docker push ${{ secrets.DOCKER_USERNAME }}/horarios-api:${{ github.ref_name }}
 ```
 
 **Pipeline de Despliegue Continuo (.github/workflows/cd.yml):**
 
 ```yaml
-name: CD - Deploy to Azure
+name: CD - Deploy with Docker
 
 on:
   push:
@@ -528,69 +620,47 @@ on:
           - production
 
 jobs:
-  terraform-plan:
+  deploy:
     runs-on: ubuntu-latest
     environment: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
       
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.8.0
         with:
-          terraform_version: 1.6.0
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
       
-      - name: Azure Login
-        uses: azure/login@v1
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-      
-      - name: Terraform Init
+      - name: Copy docker-compose files to server
         run: |
-          cd terraform
-          terraform init -backend-config="resource_group_name=${{ secrets.BACKEND_RG }}"
+          scp -o StrictHostKeyChecking=no docker/docker-compose.yml ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:~/horarios/
+          scp -o StrictHostKeyChecking=no docker/docker-compose.${{ env.ENVIRONMENT }}.yml ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:~/horarios/
       
-      - name: Terraform Plan
+      - name: Deploy with Docker Compose
         run: |
-          cd terraform
-          terraform plan -out=tfplan -var-file="environments/${{ env.ENVIRONMENT }}.tfvars"
-      
-      - name: Terraform Apply
-        if: github.event_name == 'push'
-        run: |
-          cd terraform
-          terraform apply -auto-approve tfplan
-  
-  deploy-application:
-    needs: terraform-plan
-    runs-on: ubuntu-latest
-    environment: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
-    steps:
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: dotnet-app
-      
-      - name: Azure Login
-        uses: azure/login@v1
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-      
-      - name: Deploy to Azure App Service
-        uses: azure/webapps-deploy@v2
-        with:
-          app-name: ${{ secrets.APP_SERVICE_NAME }}
-          slot-name: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
-          package: .
+          ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
+            cd ~/horarios
+            docker-compose pull
+            docker-compose -f docker-compose.yml -f docker-compose.${{ env.ENVIRONMENT }}.yml up -d --force-recreate
+          EOF
       
       - name: Run EF Core Migrations
         run: |
-          az webapp config connection-string list --name ${{ secrets.APP_SERVICE_NAME }} --resource-group ${{ secrets.RESOURCE_GROUP }}
-          dotnet ef database update --project HorariosEscolares.Infrastructure --startup-project HorariosEscolares.API
+          ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
+            cd ~/horarios
+            docker-compose exec -T api dotnet ef database update --project HorariosEscolares.Infrastructure
+          EOF
       
       - name: Smoke Tests
         run: |
-          curl -f https://${{ secrets.APP_SERVICE_NAME }}.azurewebsites.net/health || exit 1
+          curl -f http://${{ secrets.SERVER_HOST }}:5000/health || exit 1
+      
+      - name: Clean up old Docker images
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
+            docker image prune -af --filter "until=24h"
+          EOF
       
       - name: Notify deployment
         uses: 8398a7/action-slack@v3
@@ -608,21 +678,20 @@ jobs:
 | **Production** | main | Push automático | Aprobación de PO/Director | Producción con usuarios reales |
 
 **Secrets de GitHub requeridos:**
-- `AZURE_CREDENTIALS`: Service Principal JSON para autenticación en Azure
-- `AZURE_SUBSCRIPTION_ID`: ID de suscripción de Azure
-- `BACKEND_RG`: Resource Group del backend de Terraform
-- `APP_SERVICE_NAME`: Nombre del App Service
-- `RESOURCE_GROUP`: Resource Group principal
-- `SQL_CONNECTION_STRING`: Connection string de Azure SQL (generado por Terraform)
+- `DOCKER_USERNAME`: Usuario de Docker Hub o registry privado
+- `DOCKER_PASSWORD`: Contraseña o token de Docker Hub
+- `SSH_PRIVATE_KEY`: Clave SSH para acceso al servidor de destino
+- `SERVER_HOST`: Hostname o IP del servidor de despliegue
+- `SERVER_USER`: Usuario SSH del servidor
+- `SA_PASSWORD`: Contraseña del usuario SA de SQL Server
 - `SONAR_TOKEN`: Token para análisis de código con SonarCloud
 - `SLACK_WEBHOOK`: Webhook para notificaciones de Slack/Teams
-- `TERRAFORM_CLOUD_TOKEN`: Token para Terraform Cloud (opcional)
 
 **Estrategia de rollback:**
-- Slots de App Service permiten swap instantáneo a versión anterior
-- Terraform mantiene historial de estados para rollback de infraestructura
+- Docker tags permiten volver a versión anterior con `docker-compose up -d image:tag-anterior`
+- Volúmenes persistentes mantienen datos de base de datos
 - Migraciones EF Core con scripts de rollback automático
-- Backup automático de base de datos antes de cada despliegue
+- Backup automático de volúmenes Docker antes de cada despliegue con `docker run --rm -v`
 
 ---
 
@@ -981,9 +1050,10 @@ jobs:
 ### 4.6 Portabilidad (RNF-06)
 - **RNF-06.1**: Backend compatible con cualquier sistema que soporte .NET 8 (Windows, Linux, macOS)
 - **RNF-06.2**: Soporte para navegadores: Chrome, Firefox, Safari, Edge (últimas 2 versiones)
-- **RNF-06.3**: Base de datos: Azure SQL Server (producción) con posibilidad de usar SQL Server LocalDB (desarrollo)
+- **RNF-06.3**: Base de datos: MSSQL Server en Docker (multi-plataforma)
 - **RNF-06.4**: Frontend accesible desde cualquier dispositivo con navegador moderno
 - **RNF-06.5**: Responsive design con Bootstrap para móviles y tablets
+- **RNF-06.6**: Contenedores Docker para portabilidad completa del sistema
 
 ### 4.7 Escalabilidad (RNF-07)
 - **RNF-07.1**: Arquitectura que permita escalado horizontal
@@ -991,21 +1061,21 @@ jobs:
 - **RNF-07.3**: Balance de carga para múltiples instancias
 
 ### 4.8 Deployment y DevOps (RNF-08)
-- **RNF-08.1**: Infraestructura gestionada como código con Terraform para reproducibilidad y versionado
+- **RNF-08.1**: Infraestructura gestionada como código con Docker Compose para reproducibilidad y versionado
 - **RNF-08.2**: Pipelines CI/CD automatizados con GitHub Actions para build, test y deploy
-- **RNF-08.3**: Despliegue automatizado a Azure App Service con slots para staging y production
+- **RNF-08.3**: Despliegue automatizado con Docker Compose para staging y production
 - **RNF-08.4**: Migraciones de base de datos automatizadas con Entity Framework Core en pipeline
-- **RNF-08.5**: Tests automatizados (unitarios + integración) ejecutados en cada commit
+- **RNF-08.5**: Tests automatizados (unitarios + integración) ejecutados en cada commit con SQL Server en contenedor
 - **RNF-08.6**: Análisis de código estático (SonarQube/CodeQL) integrado en pipeline CI
 - **RNF-08.7**: Cobertura de código mínima del 80% validada automáticamente
-- **RNF-08.8**: Estado de Terraform almacenado remotamente en Azure Storage con lock
-- **RNF-08.9**: Secrets y connection strings gestionados en Azure Key Vault
-- **RNF-08.10**: Rollback automático mediante slots de App Service en caso de fallos
-- **RNF-08.11**: Múltiples ambientes (development, staging, production) con configuraciones independientes
+- **RNF-08.8**: Imágenes Docker versionadas y almacenadas en Docker Hub o registry privado
+- **RNF-08.9**: Secrets gestionados mediante variables de entorno o Docker Secrets
+- **RNF-08.10**: Rollback mediante tags de imágenes Docker y volúmenes persistentes
+- **RNF-08.11**: Múltiples ambientes (development, staging, production) con docker-compose overrides
 - **RNF-08.12**: Notificaciones automáticas de resultado de despliegues (Slack/Teams)
 - **RNF-08.13**: Smoke tests automatizados post-deploy para validar disponibilidad
-- **RNF-08.14**: Backup automático de base de datos antes de aplicar migraciones
-- **RNF-08.15**: Tagging consistente de recursos Azure para gestión de costos y auditoría
+- **RNF-08.14**: Backup automático de volúmenes Docker antes de aplicar migraciones
+- **RNF-08.15**: Health checks configurados en todos los contenedores Docker
 
 ---
 
@@ -1349,14 +1419,14 @@ flowchart TD
 - Generación de archivos CSV para análisis
 
 ### 7.2 Notificaciones (Fase 2)
-- Integración con servicios de email SMTP de Azure
+- Integración con servicios de email SMTP (Gmail, SendGrid, u otros)
 - Notificaciones por correo electrónico a profesores
 
 ### 7.3 Autenticación
 - ASP.NET Core Identity para gestión de usuarios
 - JWT (JSON Web Tokens) para autenticación stateless
 - Roles y políticas de autorización integrados
-- (Opcional futuro) Azure AD para SSO empresarial
+- (Opcional futuro) OpenID Connect para SSO empresarial
 
 ### 7.4 API REST
 - API REST documentada con Swagger/OpenAPI
@@ -1366,7 +1436,7 @@ flowchart TD
 
 ---
 
-## 8. Modelado de Datos (Azure SQL Server)
+## 8. Modelado de Datos (MSSQL Server Docker)
 
 ### 8.1 Esquema de Base de Datos
 
@@ -1640,10 +1710,10 @@ mockRepo.Setup(r => r.GetByIdAsync(It.IsAny<int>()))
 ## 9. Restricciones y Supuestos
 
 ### 9.1 Restricciones Técnicas
-- Desarrollo en stack tecnológico moderno (React/Vue/Angular + Node.js/Python/Java)
-- Base de datos relacional (PostgreSQL preferida)
-- Despliegue en cloud (AWS/Azure/GCP)
-- CI/CD implementado desde inicio
+- Desarrollo en stack tecnológico .NET 8 + HTML/CSS/Bootstrap
+- Base de datos MSSQL Server en contenedor Docker
+- Despliegue con Docker y Docker Compose
+- CI/CD implementado desde inicio con GitHub Actions
 
 ### 9.2 Restricciones de Negocio
 - Presupuesto limitado para fase 1
@@ -1782,15 +1852,14 @@ graph TB
     end
     
     subgraph "Persistencia"
-        AzureSQL[(Azure SQL Server<br/>Producción)]
-        LocalDB[(SQL Server LocalDB<br/>Desarrollo)]
+        SQLDocker[(MSSQL Server<br/>Docker Container)]
         InMemory[(In-Memory DB<br/>Testing)]
     end
     
     subgraph "Servicios Externos"
-        SMTP[Azure SMTP<br/>Email Service]
-        Storage[Azure Blob Storage<br/>Exports]
-        AppInsights[Application Insights<br/>Monitoring]
+        SMTP[SMTP Service<br/>Email]
+        Storage[File Storage<br/>Docker Volumes]
+        Logging[Seq/ELK<br/>Logging]
     end
     
     Browser --> HTML
@@ -1826,16 +1895,15 @@ graph TB
     RepoImpl --> DbContext
     DbContext --> EFCore
     
-    EFCore --> AzureSQL
-    EFCore -.-> LocalDB
+    EFCore --> SQLDocker
     EFCore -.-> InMemory
     
     ExportSvc --> Storage
     AuthSvc --> SMTP
-    Middleware --> AppInsights
+    Middleware --> Logging
     
     style Browser fill:#e3f2fd
-    style AzureSQL fill:#ffccbc
+    style SQLDocker fill:#ffccbc
     style HorarioGenSvc fill:#fff9c4
     style BusinessRules fill:#ffccbc
 ```
@@ -1897,7 +1965,7 @@ sequenceDiagram
     participant Svc as HorarioGeneradorService
     participant Val as ValidadorService
     participant Repo as Repository
-    participant DB as Azure SQL
+    participant DB as MSSQL Docker
     
     Usuario->>UI: Click "Generar Horario"
     UI->>API: POST /api/horarios/generar
@@ -2116,7 +2184,7 @@ graph LR
     Excel --> User
 ```
 
-#### B.6 Diagrama de Despliegue - Azure Cloud
+#### B.6 Diagrama de Despliegue - Docker
 
 ```mermaid
 graph TB
@@ -2125,45 +2193,46 @@ graph TB
         Mobile[Tablet/Móvil]
     end
     
-    subgraph "Azure Cloud"
-        subgraph "Azure App Service"
-            WebApp[App Service<br/>HorariosEscolares.API<br/>.NET 8]
-            StaticFiles[wwwroot<br/>HTML/CSS/JS]
+    subgraph "Servidor Docker Host"
+        subgraph "Docker Containers"
+            Nginx[Nginx<br/>Reverse Proxy<br/>Puerto 80/443]
+            APIContainer[API Container<br/>HorariosEscolares.API<br/>.NET 8]
+            SQLContainer[SQL Container<br/>MSSQL Server 2022<br/>Puerto 1433]
+            SeqContainer[Seq Container<br/>Logging Service<br/>Puerto 5341]
         end
         
-        subgraph "Azure SQL Database"
-            SQLServer[(SQL Server<br/>Azure SQL DB<br/>Standard Tier)]
-        end
-        
-        subgraph "Azure Storage"
-            BlobStorage[Blob Storage<br/>PDF/Excel Exports]
-        end
-        
-        subgraph "Azure Monitor"
-            AppInsights[Application Insights<br/>Logs & Metrics]
+        subgraph "Docker Volumes"
+            DataVolume[mssql-data<br/>Base de datos]
+            LogVolume[mssql-log<br/>Logs BD]
+            ExportVolume[exports<br/>PDF/Excel]
+            SeqVolume[seq-data<br/>Logs aplicación]
         end
     end
     
     subgraph "Desarrollo"
         DevMachine[Máquina<br/>Desarrollador]
-        LocalSQL[(SQL Server<br/>LocalDB)]
+        LocalDocker[Docker Compose<br/>Local]
     end
     
-    Desktop --> WebApp
-    Mobile --> WebApp
+    Desktop --> Nginx
+    Mobile --> Nginx
     
-    WebApp --> StaticFiles
-    WebApp --> SQLServer
-    WebApp --> BlobStorage
-    WebApp --> AppInsights
+    Nginx --> APIContainer
+    APIContainer --> SQLContainer
+    APIContainer --> ExportVolume
+    APIContainer --> SeqContainer
     
-    DevMachine -.Deploy.-> WebApp
-    DevMachine -.Develop.-> LocalSQL
+    SQLContainer --> DataVolume
+    SQLContainer --> LogVolume
+    SeqContainer --> SeqVolume
     
-    style WebApp fill:#4caf50
-    style SQLServer fill:#ff9800
-    style BlobStorage fill:#2196f3
-    style AppInsights fill:#9c27b0
+    DevMachine -.Deploy.-> Nginx
+    DevMachine -.Develop.-> LocalDocker
+    
+    style APIContainer fill:#4caf50
+    style SQLContainer fill:#ff9800
+    style Nginx fill:#2196f3
+    style SeqContainer fill:#9c27b0
 ```
 
 ---
