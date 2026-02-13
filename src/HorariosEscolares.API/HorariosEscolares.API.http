@@ -1,0 +1,6 @@
+@HorariosEscolares.API_HostAddress = http://localhost:5113
+
+GET {{HorariosEscolares.API_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

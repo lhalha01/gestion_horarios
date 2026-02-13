@@ -1,0 +1,53 @@
+version: '3.8'
+
+services:
+  # SQL Server Database
+  mssql:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: horarios-mssql
+    environment:
+      - ACCEPT_EULA=Y
+      - SA_PASSWORD=${SA_PASSWORD:-HorariosDB2024!}
+      - MSSQL_PID=Developer
+    ports:
+      - "1433:1433"
+    volumes:
+      - mssql-data:/var/opt/mssql/data
+      - mssql-log:/var/opt/mssql/log
+      - ./sql-server/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P ${SA_PASSWORD:-HorariosDB2024!} -Q "SELECT 1" -C || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - horarios-network
+    restart: unless-stopped
+
+  # Seq - Centralized Logging
+  seq:
+    image: datalust/seq:latest
+    container_name: horarios-seq
+    environment:
+      - ACCEPT_EULA=Y
+    ports:
+      - "5341:5341"  # Ingestion
+      - "8081:80"    # UI
+    volumes:
+      - seq-data:/data
+    networks:
+      - horarios-network
+    restart: unless-stopped
+
+volumes:
+  mssql-data:
+    driver: local
+  mssql-log:
+    driver: local
+  seq-data:
+    driver: local
+
+networks:
+  horarios-network:
+    driver: bridge
